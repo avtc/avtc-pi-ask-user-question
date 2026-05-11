@@ -636,3 +636,13 @@ export class AskUserQuestionComponent implements Component {
     }
   }
 }
+
+/** Render questions via AskUserQuestionComponent and return a Result. */
+export async function renderQuestionsViaUI(questions: Question[], ctx: any): Promise<Result | null> {
+  const result = await ctx.ui.custom<Result | null>(
+    (tui: any, theme: any, _kb: any, done: (result: Result | null) => void) =>
+      new AskUserQuestionComponent(questions, tui, theme, done),
+    {},
+  );
+  return result;
+}

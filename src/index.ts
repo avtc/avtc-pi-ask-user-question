@@ -3,8 +3,12 @@ import { Box, TruncatedText } from "@mariozechner/pi-tui";
 import { AskUserQuestionComponent } from "./component.ts";
 import { InputSchema, type Question, type Result } from "./schema.ts";
 import { validateUniqueness } from "./validate.ts";
+import { renderQuestionsViaUI } from "./component.ts";
+import { handleSubagentForwarding, registerIntercomHooks } from "./intercom-forwarding.ts";
 
 export default function (pi: ExtensionAPI) {
+  registerIntercomHooks(pi);
+
   pi.registerTool({
     name: "ask_user_question",
     label: "Ask User",
@@ -18,7 +22,7 @@ Each question must have 2–4 options. Users can always select "Other" to type a
 Option labels should be concise (1–5 words).
 Set multiSelect: true when more than one option can validly apply at the same time.
 The header field is a short label (max 12 characters) used in the tab bar when showing multiple questions.
-If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
+If you recommend a specific option, make it the first option in the list and add "(Recommended)" at the end of the label.
 Always use this tool instead of asking questions in plain text — it provides a structured, interactive UI.`,
 
     parameters: InputSchema,
@@ -38,7 +42,11 @@ Always use this tool instead of asking questions in plain text — it provides a
       }
 
       if (!ctx.hasUI) {
-        // Non-interactive session — deregister so the LLM won't try again
+        // Subagent with pi-intercom: forward to root session
+        const forwarded = await handleSubagentForwarding(params, _signal);
+        if (forwarded) return forwarded;
+
+        // Non-interactive session without intercom — deregister so the LLM won't try again
         pi.setActiveTools(
           pi.getActiveTools().filter((name) => name !== "ask_user_question"),
         );
@@ -57,12 +65,9 @@ Always use this tool instead of asking questions in plain text — it provides a
         };
       }
 
-      const result = await ctx.ui.custom<Result | null>(
-        (tui, theme, _kb, done) =>
-          new AskUserQuestionComponent(params.questions, tui, theme, done),
-      );
+      const result = await renderQuestionsViaUI(params.questions, ctx);
 
-      if (result === null || result.cancelled) {
+      if (!result) {
         return {
           content: [{ type: "text", text: "User cancelled" }],
           details: {
