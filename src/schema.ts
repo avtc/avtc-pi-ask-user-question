@@ -1,11 +1,13 @@
-import { type Static, Type } from "@sinclair/typebox";
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 avtc <tarasenkov@gmail.com>
+
+import { type Static, Type } from "@earendil-works/pi-ai";
 
 // ── Input (what the LLM sends) ────────────────────────────────────────────────
 
 export const OptionSchema = Type.Object({
   label: Type.String({
-    description:
-      "Display label shown to the user and returned as the answer value",
+    description: "Display label shown to the user and returned as the answer value",
   }),
   description: Type.Optional(
     Type.String({
@@ -19,8 +21,7 @@ export const QuestionSchema = Type.Object({
     description: "Full question text displayed to the user",
   }),
   header: Type.String({
-    description:
-      "Short label used in the tab bar when multiple questions are shown. Max 12 characters.",
+    description: "Short label used in the tab bar when multiple questions are shown. Max 12 characters.",
   }),
   options: Type.Array(OptionSchema, {
     minItems: 2,
@@ -28,8 +29,7 @@ export const QuestionSchema = Type.Object({
     description: "Between 2 and 4 choices for the user to select from",
   }),
   multiSelect: Type.Boolean({
-    description:
-      "When true the user may select multiple options. Answers are joined with ', '.",
+    description: "When true the user may select multiple options. Answers are joined with ', '.",
   }),
 });
 
@@ -68,3 +68,8 @@ export const ResultSchema = Type.Object({
 });
 
 export type Result = Static<typeof ResultSchema>;
+
+/** Build the human-readable Q&A summary lines (shared by the root handler + bridge). */
+export function formatResultSummary(result: Result): string {
+  return result.questions.map((q) => `"${q.question}" = "${result.answers[q.question] ?? "(no answer)"}"`).join("\n");
+}

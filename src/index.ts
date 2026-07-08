@@ -1,10 +1,38 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Box, TruncatedText } from "@mariozechner/pi-tui";
-import { AskUserQuestionComponent } from "./component.ts";
-import { InputSchema, type Question, type Result } from "./schema.ts";
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 avtc <tarasenkov@gmail.com>
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Box, TruncatedText } from "@earendil-works/pi-tui";
+import {
+  buildNotificationDetail,
+  handleSubagentForwarding,
+  isSubagentSession,
+  registerAskQuestionBridge,
+} from "./ask-question-bridge.ts";
+import { renderQuestionsViaUI } from "./component.ts";
+import { formatResultSummary, InputSchema, type Question, type Result } from "./schema.ts";
+import { subscribeToDialogCoordinator, withCoordinator } from "./snippets/vendored/subscribe-to-dialog-coordinator.ts";
+import {
+  getLastMessage,
+  subscribeToNotificationApi,
+  withAttention,
+} from "./snippets/vendored/subscribe-to-notifications.ts";
 import { validateUniqueness } from "./validate.ts";
 
+// Idempotent wiring guard. ask-user-question can be bundled into the avtc-pi umbrella
+// AND installed standalone — whichever copy loads first wires, the rest no-op.
+const WIRED_KEY = "__avtcPiAskUserQuestionWired";
+type GlobalWithWired = typeof globalThis & { [WIRED_KEY]?: boolean };
+
 export default function (pi: ExtensionAPI) {
+  const g = globalThis as GlobalWithWired;
+  if (g[WIRED_KEY]) return;
+  g[WIRED_KEY] = true;
+
+  registerAskQuestionBridge(pi);
+  subscribeToNotificationApi(pi);
+  subscribeToDialogCoordinator(pi);
+
   pi.registerTool({
     name: "ask_user_question",
     label: "Ask User",
@@ -18,7 +46,7 @@ Each question must have 2–4 options. Users can always select "Other" to type a
 Option labels should be concise (1–5 words).
 Set multiSelect: true when more than one option can validly apply at the same time.
 The header field is a short label (max 12 characters) used in the tab bar when showing multiple questions.
-If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
+If you recommend a specific option, make it the first option in the list and add "(Recommended)" at the end of the label.
 Always use this tool instead of asking questions in plain text — it provides a structured, interactive UI.`,
 
     parameters: InputSchema,
@@ -37,11 +65,16 @@ Always use this tool instead of asking questions in plain text — it provides a
         };
       }
 
-      if (!ctx.hasUI) {
-        // Non-interactive session — deregister so the LLM won't try again
-        pi.setActiveTools(
-          pi.getActiveTools().filter((name) => name !== "ask_user_question"),
-        );
+      // Try the subagent bridge FIRST (works in both json and rpc child modes). In json the
+      // child has hasUI=false; in rpc the child has hasUI=true but must still forward to the
+      // root session over the inherited socket. handleSubagentForwarding is a no-op (null) when
+      // the bridge is unavailable, so calling it first is safe and lets an RPC child forward.
+      const forwarded = await handleSubagentForwarding(params, _signal);
+      if (forwarded) return forwarded;
+
+      if (isSubagentSession(ctx)) {
+        // Non-interactive session with no bridge — deregister so the LLM won't try again.
+        pi.setActiveTools(pi.getActiveTools().filter((name) => name !== "ask_user_question"));
         return {
           content: [
             {
@@ -57,12 +90,14 @@ Always use this tool instead of asking questions in plain text — it provides a
         };
       }
 
-      const result = await ctx.ui.custom<Result | null>(
-        (tui, theme, _kb, done) =>
-          new AskUserQuestionComponent(params.questions, tui, theme, done),
+      // Build notification detail: question summary + last assistant message for context
+      const notificationDetail = buildNotificationDetail(params.questions, getLastMessage());
+
+      const result = await withAttention("ask_user_question", notificationDetail, () =>
+        withCoordinator(() => renderQuestionsViaUI(params.questions, ctx)),
       );
 
-      if (result === null || result.cancelled) {
+      if (!result) {
         return {
           content: [{ type: "text", text: "User cancelled" }],
           details: {
@@ -73,13 +108,8 @@ Always use this tool instead of asking questions in plain text — it provides a
         };
       }
 
-      const summaryLines = result.questions.map(
-        (q) =>
-          `"${q.question}" = "${result.answers[q.question] ?? "(no answer)"}"`,
-      );
-
       return {
-        content: [{ type: "text", text: summaryLines.join("\n") }],
+        content: [{ type: "text", text: formatResultSummary(result) }],
         details: result satisfies Result,
       };
     },
@@ -87,12 +117,7 @@ Always use this tool instead of asking questions in plain text — it provides a
     renderCall(args, theme) {
       const questions = (args.questions ?? []) as Question[];
       const topics = questions.map((q) => q.header).join(", ");
-      return new TruncatedText(
-        theme.fg("toolTitle", theme.bold("ask user ")) +
-          theme.fg("muted", topics),
-        0,
-        0,
-      );
+      return new TruncatedText(theme.fg("toolTitle", theme.bold("ask user ")) + theme.fg("muted", topics), 0, 0);
     },
 
     renderResult(result, _options, theme) {
@@ -113,9 +138,7 @@ Always use this tool instead of asking questions in plain text — it provides a
         const answer = details.answers[q.question] ?? "(no answer)";
         box.addChild(
           new TruncatedText(
-            theme.fg("success", "✓ ") +
-              theme.fg("accent", `${q.header}: `) +
-              theme.fg("text", answer),
+            theme.fg("success", "✓ ") + theme.fg("accent", `${q.header}: `) + theme.fg("text", answer),
             0,
             0,
           ),
@@ -123,5 +146,12 @@ Always use this tool instead of asking questions in plain text — it provides a
       }
       return box;
     },
+  });
+
+  // Reset the idempotency guard on session shutdown so /reload can re-wire fresh.
+  // pi re-evaluates extension modules on /reload but globalThis persists, so without
+  // this reset the guard would short-circuit re-wiring and leave the extension dead.
+  pi.on("session_shutdown", () => {
+    (globalThis as GlobalWithWired)[WIRED_KEY] = false;
   });
 }

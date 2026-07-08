@@ -1,4 +1,7 @@
-import type { Theme } from "@mariozechner/pi-coding-agent";
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 avtc <tarasenkov@gmail.com>
+
+import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   type Component,
   Editor,
@@ -8,8 +11,15 @@ import {
   type TUI,
   truncateToWidth,
   wrapTextWithAnsi,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 import type { Option, Question, Result } from "./schema.ts";
+
+// Kitty protocol: Cmd+Enter on Mac = codepoint 13 (enter), modifier 9 (Win/Super=8 + 1)
+// Also handle numpad enter (codepoint 57414) with same modifier.
+const CMD_ENTER_SEQUENCES = ["\x1b[13;9u", "\x1b[57414;9u"] as const;
+function matchesCmdEnter(data: string): boolean {
+  return CMD_ENTER_SEQUENCES.includes(data as (typeof CMD_ENTER_SEQUENCES)[number]);
+}
 
 // ── TUILike ───────────────────────────────────────────────────────────────────
 // Minimal interface satisfied by both the real TUI and a test stub.
@@ -29,6 +39,8 @@ interface QuestionState {
   confirmed: boolean;
   /** Free-text answer typed by the user; null = free-text not chosen */
   freeTextValue: string | null;
+  /** For multiSelect: whether free-text checkbox is checked (independent of value) */
+  freeTextChecked: boolean;
   /** Whether the inline Editor is currently active */
   inEditMode: boolean;
 }
@@ -36,6 +48,9 @@ interface QuestionState {
 type DisplayOption = Option & { isOther?: true };
 
 // ── AskUserQuestionComponent ──────────────────────────────────────────────────
+/** Passed to the done() callback when the prompt is cancelled (no answer selected). */
+const NO_RESULT: Result | null = null;
+
 export class AskUserQuestionComponent implements Component {
   private questions: Question[];
   private theme: Theme;
@@ -53,12 +68,7 @@ export class AskUserQuestionComponent implements Component {
   // Guard: prevent done() being called more than once
   private _resolved: boolean = false;
 
-  constructor(
-    questions: Question[],
-    tui: TUILike,
-    theme: Theme,
-    done: (result: Result | null) => void,
-  ) {
+  constructor(questions: Question[], tui: TUILike, theme: Theme, done: (result: Result | null) => void) {
     this.questions = questions;
     this.tui = tui;
     this.theme = theme;
@@ -70,6 +80,7 @@ export class AskUserQuestionComponent implements Component {
       selectedIndices: new Set<number>(),
       confirmed: false,
       freeTextValue: null,
+      freeTextChecked: false,
       inEditMode: false,
     }));
 
@@ -97,10 +108,7 @@ export class AskUserQuestionComponent implements Component {
   // ── Derived helpers ─────────────────────────────────────────────────────────
 
   private allOptions(q: Question): DisplayOption[] {
-    return [
-      ...q.options,
-      { label: "Type your own answer...", isOther: true as const },
-    ];
+    return [...q.options, { label: "Type your own answer...", isOther: true as const }];
   }
 
   private allConfirmed(): boolean {
@@ -203,21 +211,13 @@ export class AskUserQuestionComponent implements Component {
     add(parts.join(""));
   }
 
-  private renderQuestionBody(
-    q: Question,
-    state: QuestionState,
-    width: number,
-    add: (s: string) => void,
-  ): void {
+  private renderQuestionBody(q: Question, state: QuestionState, width: number, add: (s: string) => void): void {
     const t = this.theme;
     const opts = this.allOptions(q);
 
     // Question text (word-wrapped)
     {
-      const wrapped = wrapTextWithAnsi(
-        t.fg("text", ` ${q.question}`),
-        width - 2,
-      );
+      const wrapped = wrapTextWithAnsi(t.fg("text", ` ${q.question}`), width - 2);
       for (const line of wrapped) {
         add(line);
       }
@@ -239,29 +239,23 @@ export class AskUserQuestionComponent implements Component {
         add(`${prefix} ${box} ${t.fg(labelColor, `${i + 1}. ${opt.label}`)}`);
       } else if (isOther) {
         // "Type your own answer..." row — check/box matches sibling row format
-        const hasFreeText = state.freeTextValue !== null && !state.inEditMode;
+        const hasFreeText = state.freeTextChecked && state.freeTextValue !== null && !state.inEditMode;
         const suffix = state.inEditMode ? t.fg("accent", " ✎") : "";
         const labelColor = isSelected ? "accent" : "muted";
         if (q.multiSelect) {
           // Match multi-select box format: prefix + ' ' + box(3) + ' ' + label
           const box = hasFreeText ? t.fg("success", "[✓]") : t.fg("dim", "[ ]");
-          add(
-            `${prefix} ${box} ${t.fg(labelColor, `${i + 1}. ${opt.label}`)}${suffix}`,
-          );
+          add(`${prefix} ${box} ${t.fg(labelColor, `${i + 1}. ${opt.label}`)}${suffix}`);
         } else {
           // Match single-select format: prefix + ' ' + check(1) + ' ' + label
           const check = hasFreeText ? t.fg("success", "✓") : " ";
-          add(
-            `${prefix} ${check} ${t.fg(labelColor, `${i + 1}. ${opt.label}`)}${suffix}`,
-          );
+          add(`${prefix} ${check} ${t.fg(labelColor, `${i + 1}. ${opt.label}`)}${suffix}`);
         }
-        // Preview of saved text below, no ✓ here
+        // Preview of saved text below — collapse multiline to single line
         if (hasFreeText) {
           const indent = q.multiSelect ? "       " : "     ";
-          const preview = truncateToWidth(
-            state.freeTextValue ?? "",
-            width - indent.length,
-          );
+          const display = (state.freeTextValue ?? "").replace(/\n/g, " ↵ ");
+          const preview = truncateToWidth(display, width - indent.length);
           add(`${indent}${t.fg("dim", `"${preview}"`)}`);
         }
       } else {
@@ -275,10 +269,7 @@ export class AskUserQuestionComponent implements Component {
       // Description (if present, not for "Type your own answer...")
       if (!isOther && opt.description) {
         const indent = q.multiSelect ? "       " : "     ";
-        const wrapped = wrapTextWithAnsi(
-          t.fg("muted", opt.description),
-          width - indent.length,
-        );
+        const wrapped = wrapTextWithAnsi(t.fg("muted", opt.description), width - indent.length);
         for (const line of wrapped) {
           add(`${indent}${line}`);
         }
@@ -299,13 +290,13 @@ export class AskUserQuestionComponent implements Component {
 
     // Footer help — context-sensitive based on cursor position
     if (state.inEditMode) {
-      add(t.fg("dim", " Enter submit · Esc back"));
+      add(t.fg("dim", " Enter submit · Ctrl+Enter/Shift+Enter/Cmd+Enter new line · Esc back"));
     } else {
       const onOther = state.cursorIndex === opts.length - 1;
       const tabHint = this.isSingle ? "" : " · ←→ switch tabs";
       let actionHint: string;
       if (onOther) {
-        actionHint = "Space/Tab open editor";
+        actionHint = "Tab open editor";
       } else if (q.multiSelect) {
         actionHint = "Space toggle · Enter confirm";
       } else {
@@ -325,19 +316,16 @@ export class AskUserQuestionComponent implements Component {
     add(title);
     add("");
 
-    for (const q of this.questions) {
-      const state = this.states[this.questions.indexOf(q)];
+    for (let i = 0; i < this.questions.length; i++) {
+      const q = this.questions[i];
+      const state = this.states[i];
       const answer = this.getAnswerText(q, state);
       if (answer !== null) {
-        add(
-          t.fg("muted", ` ${truncateToWidth(q.header, 12)}: `) +
-            t.fg("text", answer),
-        );
+        // Collapse multiline to single line for display
+        const display = answer.replace(/\n/g, " ↵ ");
+        add(t.fg("muted", ` ${truncateToWidth(q.header, 12)}: `) + t.fg("text", display));
       } else {
-        add(
-          t.fg("dim", ` ${truncateToWidth(q.header, 12)}: `) +
-            t.fg("warning", "—"),
-        );
+        add(t.fg("dim", ` ${truncateToWidth(q.header, 12)}: `) + t.fg("warning", "—"));
       }
     }
 
@@ -358,15 +346,12 @@ export class AskUserQuestionComponent implements Component {
   private getAnswerText(q: Question, state: QuestionState): string | null {
     if (!state.confirmed) return null;
     if (q.multiSelect) {
-      const labels = [...state.selectedIndices]
-        .sort((a, b) => a - b)
-        .map((idx) => q.options[idx].label);
-      if (state.freeTextValue !== null) labels.push(state.freeTextValue);
+      const labels = [...state.selectedIndices].sort((a, b) => a - b).map((idx) => q.options[idx].label);
+      if (state.freeTextChecked && state.freeTextValue !== null) labels.push(state.freeTextValue);
       return labels.join(", ");
     }
     if (state.freeTextValue !== null) return state.freeTextValue;
-    if (state.selectedIndex !== null)
-      return q.options[state.selectedIndex].label;
+    if (state.selectedIndex !== null) return q.options[state.selectedIndex].label;
     return null;
   }
 
@@ -389,7 +374,7 @@ export class AskUserQuestionComponent implements Component {
       state.selectedIndices.add(index);
     }
     // If all answers removed, un-confirm so Submit tab blocks correctly
-    if (state.selectedIndices.size === 0 && state.freeTextValue === null) {
+    if (state.selectedIndices.size === 0 && !(state.freeTextChecked && state.freeTextValue !== null)) {
       state.confirmed = false;
     }
     this.invalidate();
@@ -412,7 +397,8 @@ export class AskUserQuestionComponent implements Component {
   private exitEditMode(save: boolean): void {
     const state = this.states[this.activeTab];
     if (save) {
-      state.freeTextValue = this.editor.getText().trim();
+      state.freeTextValue = this.editor.getExpandedText().trim();
+      state.freeTextChecked = true;
       // Free-text replaces any prior regular-option selection — clear the ✓ indicator
       state.selectedIndex = null;
     } else {
@@ -432,7 +418,7 @@ export class AskUserQuestionComponent implements Component {
     const state = this.states[this.activeTab];
     if (!q || !state || state.confirmed) return;
     if (q.multiSelect) {
-      if (state.selectedIndices.size > 0 || state.freeTextValue !== null) {
+      if (state.selectedIndices.size > 0 || (state.freeTextChecked && state.freeTextValue !== null)) {
         state.confirmed = true;
       }
     } else {
@@ -469,7 +455,7 @@ export class AskUserQuestionComponent implements Component {
 
   private cancel(): void {
     this._resolved = true;
-    this.done(null);
+    this.done(NO_RESULT);
   }
 
   private buildResult(): Result {
@@ -479,10 +465,8 @@ export class AskUserQuestionComponent implements Component {
       const s = this.states[i];
       if (!s.confirmed) continue;
       if (q.multiSelect) {
-        const labels = [...s.selectedIndices]
-          .sort((a, b) => a - b)
-          .map((idx) => q.options[idx].label);
-        if (s.freeTextValue !== null) labels.push(s.freeTextValue);
+        const labels = [...s.selectedIndices].sort((a, b) => a - b).map((idx) => q.options[idx].label);
+        if (s.freeTextChecked && s.freeTextValue !== null) labels.push(s.freeTextValue);
         answers[q.question] = labels.join(", ");
       } else if (s.freeTextValue !== null) {
         answers[q.question] = s.freeTextValue;
@@ -535,8 +519,24 @@ export class AskUserQuestionComponent implements Component {
         this.tui.requestRender();
         return;
       }
+      // Ctrl+Enter / Shift+Enter / Cmd+Enter all insert a newline (multiline)
+      // When Kitty protocol is NOT active, modifier+Enter sends \n (LF) instead
+      // of Kitty sequences. \n is matched as Enter when Kitty is inactive,
+      // so we must catch it here before the plain Enter check.
+      if (
+        matchesKey(data, Key.ctrl("enter")) ||
+        matchesKey(data, Key.shift("enter")) ||
+        matchesCmdEnter(data) ||
+        data === "\n"
+      ) {
+        this.editor.insertTextAtCursor("\n");
+        this.invalidate();
+        this.tui.requestRender();
+        return;
+      }
+      // Plain Enter submits (only \r / Kitty Enter, NOT \n)
       if (matchesKey(data, Key.enter)) {
-        const text = this.editor.getText().trim();
+        const text = this.editor.getExpandedText().trim();
         if (text) {
           this.exitEditMode(true);
           // Multi-select: just return to options so user can still toggle checkboxes
@@ -549,9 +549,15 @@ export class AskUserQuestionComponent implements Component {
         } else {
           // Empty text — clear any previously saved free-text answer
           state.freeTextValue = null;
-          // If nothing left selected either, un-confirm
-          const q = this.questions[this.activeTab];
-          if (q.multiSelect && state.selectedIndices.size === 0) {
+          state.freeTextChecked = false;
+          // If nothing else is selected, un-confirm so Submit tab blocks correctly.
+          // Multi-select: un-confirm only if no boxes are checked.
+          // Single-select: un-confirm only if no option is selected.
+          if (q.multiSelect) {
+            if (state.selectedIndices.size === 0) {
+              state.confirmed = false;
+            }
+          } else if (state.selectedIndex === null) {
             state.confirmed = false;
           }
           this.exitEditMode(false);
@@ -600,23 +606,35 @@ export class AskUserQuestionComponent implements Component {
     const opts = this.allOptions(q);
     const onOther = state.cursorIndex === opts.length - 1;
 
-    // "Type your own answer..." — Space or Tab opens the editor
+    // "Type your own answer..." — Tab opens editor
+    // In multiSelect: Space toggles checkbox (handled below)
     // Enter confirms if there's already a saved free-text answer
     if (onOther) {
-      if (matchesKey(data, Key.space) || matchesKey(data, Key.tab)) {
+      if (matchesKey(data, Key.tab)) {
         this.enterEditMode();
         return;
       }
-      if (matchesKey(data, Key.enter) && state.freeTextValue !== null) {
+      if (matchesKey(data, Key.enter) && state.freeTextChecked) {
         this.confirmAndAdvance();
         return;
       }
     }
 
     if (q.multiSelect) {
-      if (matchesKey(data, Key.space) && !onOther) {
-        // Space = toggle selection
-        this.toggleSelected(state.cursorIndex);
+      if (matchesKey(data, Key.space)) {
+        // Space = toggle selection (including "Type your answer..." row)
+        if (onOther) {
+          // Toggle free-text checkbox — keep text intact
+          state.freeTextChecked = !state.freeTextChecked;
+          // If unchecked and nothing selected, un-confirm
+          if (!state.freeTextChecked && state.selectedIndices.size === 0) {
+            state.confirmed = false;
+          }
+        } else {
+          this.toggleSelected(state.cursorIndex);
+        }
+        this.invalidate();
+        this.tui.requestRender();
         return;
       }
       if (matchesKey(data, Key.enter) && !onOther) {
@@ -635,4 +653,17 @@ export class AskUserQuestionComponent implements Component {
       }
     }
   }
+}
+
+/**
+ * Render questions via AskUserQuestionComponent and return a Result.
+ */
+export async function renderQuestionsViaUI(
+  questions: Question[],
+  ctx: { ui: ExtensionUIContext },
+): Promise<Result | null> {
+  return ctx.ui.custom<Result | null>(
+    (tui, theme, _kb, done) => new AskUserQuestionComponent(questions, tui, theme, done),
+    {},
+  );
 }

@@ -1,16 +1,12 @@
-import type { Theme } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 avtc <tarasenkov@gmail.com>
+
+import { Type } from "@earendil-works/pi-ai";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { AskUserQuestionComponent, type TUILike } from "../src/component.ts";
-import {
-  InputSchema,
-  OptionSchema,
-  type Question,
-  QuestionSchema,
-  type Result,
-  ResultSchema,
-} from "../src/schema.ts";
+import { InputSchema, OptionSchema, type Question, QuestionSchema, type Result, ResultSchema } from "../src/schema.ts";
 
 // ── Smoke test ────────────────────────────────────────────────────────────────
 
@@ -46,6 +42,10 @@ const INPUT = {
   tab: "\t",
   shiftTab: "\x1b[Z",
   space: " ",
+  // Kitty protocol sequences for modifier+enter
+  ctrlEnter: "\x1b[13;5u", // CSI 13 ; 5 u (codepoint 13=enter, modifier 5=ctrl)
+  shiftEnter: "\x1b[13;2u", // CSI 13 ; 2 u (codepoint 13=enter, modifier 2=shift)
+  cmdEnter: "\x1b[13;9u", // CSI 13 ; 9 u (codepoint 13=enter, modifier 9=Win/Super/Cmd)
 } as const;
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -84,16 +84,11 @@ const twoOptionsQ: Question = {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
-function make(
-  questions: Question[],
-  done: (r: Result | null) => void = () => {},
-): AskUserQuestionComponent {
-  return new AskUserQuestionComponent(
-    questions,
-    mockTui as TUILike,
-    mockTheme as unknown as Theme,
-    done,
-  );
+/** No-op callback for done */
+const NOOP_DONE = () => {};
+
+function make(questions: Question[], done: (r: Result | null) => void): AskUserQuestionComponent {
+  return new AskUserQuestionComponent(questions, mockTui as TUILike, mockTheme as unknown as Theme, done);
 }
 
 /** Strip ANSI escape codes from a string */
@@ -108,39 +103,35 @@ function stripAnsi(s: string): string {
 
 describe("render — single question", () => {
   it("renders separator lines at top and bottom", () => {
-    const lines = make([singleSelect]).render(80);
+    const lines = make([singleSelect], NOOP_DONE).render(80);
     expect(lines[0]).toContain("─");
     expect(lines[lines.length - 1]).toContain("─");
   });
 
   it("renders the question text", () => {
-    const lines = make([singleSelect]).render(80);
-    expect(lines.some((l) => l.includes("Which database should we use?"))).toBe(
-      true,
-    );
+    const lines = make([singleSelect], NOOP_DONE).render(80);
+    expect(lines.some((l) => l.includes("Which database should we use?"))).toBe(true);
   });
 
   it("renders all option labels", () => {
-    const lines = make([singleSelect]).render(80);
+    const lines = make([singleSelect], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("PostgreSQL"))).toBe(true);
     expect(lines.some((l) => l.includes("SQLite"))).toBe(true);
     expect(lines.some((l) => l.includes("DuckDB"))).toBe(true);
   });
 
   it("renders Type your own answer... option", () => {
-    const lines = make([singleSelect]).render(80);
+    const lines = make([singleSelect], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("Type your own answer..."))).toBe(true);
   });
 
   it("renders option descriptions", () => {
-    const lines = make([singleSelect]).render(80);
-    expect(lines.some((l) => l.includes("Battle-tested relational DB"))).toBe(
-      true,
-    );
+    const lines = make([singleSelect], NOOP_DONE).render(80);
+    expect(lines.some((l) => l.includes("Battle-tested relational DB"))).toBe(true);
   });
 
   it("does not render a tab bar", () => {
-    const lines = make([singleSelect]).render(80);
+    const lines = make([singleSelect], NOOP_DONE).render(80);
     // Tab bar would contain "Submit"
     expect(lines.some((l) => l.includes("Submit"))).toBe(false);
     // And would contain the header label alongside other tabs
@@ -149,19 +140,19 @@ describe("render — single question", () => {
   });
 
   it("renders cursor > on first option initially", () => {
-    const lines = make([singleSelect]).render(80);
+    const lines = make([singleSelect], NOOP_DONE).render(80);
     expect(lines.some((l) => l.match(/^>\s+.*PostgreSQL/))).toBe(true);
   });
 
   it("no line exceeds width", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     for (const line of c.render(40)) {
       expect(stripAnsi(line).length).toBeLessThanOrEqual(40);
     }
   });
 
   it("renders option descriptions for minimum 2 options", () => {
-    const lines = make([twoOptionsQ]).render(80);
+    const lines = make([twoOptionsQ], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("Yes"))).toBe(true);
     expect(lines.some((l) => l.includes("No"))).toBe(true);
     expect(lines.some((l) => l.includes("Type your own answer..."))).toBe(true);
@@ -172,18 +163,18 @@ describe("render — single question", () => {
 
 describe("render — multi-question tab bar", () => {
   it("renders tab bar with both headers", () => {
-    const lines = make([singleSelect, multiSelectQ]).render(80);
+    const lines = make([singleSelect, multiSelectQ], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("Database"))).toBe(true);
     expect(lines.some((l) => l.includes("Features"))).toBe(true);
   });
 
   it("renders Submit tab", () => {
-    const lines = make([singleSelect, multiSelectQ]).render(80);
+    const lines = make([singleSelect, multiSelectQ], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("Submit"))).toBe(true);
   });
 
   it("truncates long header in tab bar", () => {
-    const lines = make([longHeaderQ, twoOptionsQ]).render(80);
+    const lines = make([longHeaderQ, twoOptionsQ], NOOP_DONE).render(80);
     // Should be truncated to 12 chars
     const tabLine = lines.find((l) => l.includes("Submit"));
     expect(tabLine).toBeDefined();
@@ -196,15 +187,13 @@ describe("render — multi-question tab bar", () => {
 
 describe("render — multi-select", () => {
   it("renders unchecked boxes initially", () => {
-    const lines = make([multiSelectQ]).render(80);
+    const lines = make([multiSelectQ], NOOP_DONE).render(80);
     expect(lines.some((l) => l.includes("[ ]") || l.includes("□"))).toBe(true);
   });
 
   it("does not render checkboxes for single-select", () => {
-    const lines = make([singleSelect]).render(80);
-    expect(lines.some((l) => l.includes("[ ]") || l.includes("[✓]"))).toBe(
-      false,
-    );
+    const lines = make([singleSelect], NOOP_DONE).render(80);
+    expect(lines.some((l) => l.includes("[ ]") || l.includes("[✓]"))).toBe(false);
   });
 });
 
@@ -212,14 +201,14 @@ describe("render — multi-select", () => {
 
 describe("render — cache", () => {
   it("returns same array reference on repeated call with same width", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     const a = c.render(80);
     const b = c.render(80);
     expect(a).toBe(b);
   });
 
-  it("returns new array after invalidate()", () => {
-    const c = make([singleSelect]);
+  it("returns new array after invalidate", () => {
+    const c = make([singleSelect], NOOP_DONE);
     const a = c.render(80);
     c.invalidate();
     const b = c.render(80);
@@ -227,7 +216,7 @@ describe("render — cache", () => {
   });
 
   it("returns new array when width changes", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     const a = c.render(80);
     const b = c.render(60);
     expect(a).not.toBe(b);
@@ -238,7 +227,7 @@ describe("render — cache", () => {
 
 describe("handleInput — cursor navigation", () => {
   it("moves cursor down on ↓", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     c.handleInput(INPUT.down);
     const lines = c.render(80);
     expect(lines.some((l) => l.match(/^>\s+.*SQLite/))).toBe(true);
@@ -246,21 +235,21 @@ describe("handleInput — cursor navigation", () => {
   });
 
   it("does not move cursor above 0 on ↑ from top", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     c.handleInput(INPUT.up);
     const lines = c.render(80);
     expect(lines.some((l) => l.match(/^>\s+.*PostgreSQL/))).toBe(true);
   });
 
   it("clamps cursor at last option (Type your own answer...) on repeated ↓", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     for (let i = 0; i < 20; i++) c.handleInput(INPUT.down);
     const lines = c.render(80);
     expect(lines.some((l) => l.match(/^>.*Type your own answer/))).toBe(true);
   });
 
-  it("moves back up from Type your own answer...", () => {
-    const c = make([singleSelect]);
+  it("moves back up from Type your own answer", () => {
+    const c = make([singleSelect], NOOP_DONE);
     for (let i = 0; i < 20; i++) c.handleInput(INPUT.down);
     c.handleInput(INPUT.up);
     const lines = c.render(80);
@@ -279,10 +268,8 @@ describe("handleInput — single-select confirm", () => {
     });
     c.handleInput(INPUT.enter);
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
-    expect(resolved?.answers["Which database should we use?"]).toBe(
-      "PostgreSQL",
-    );
+    expect((resolved as unknown as Result).cancelled).toBe(false);
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("PostgreSQL");
   });
 
   it("resolves with second option after ↓ Enter", () => {
@@ -292,7 +279,7 @@ describe("handleInput — single-select confirm", () => {
     });
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.enter);
-    expect(resolved?.answers["Which database should we use?"]).toBe("SQLite");
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("SQLite");
   });
 
   it("result has cancelled: false", () => {
@@ -301,7 +288,7 @@ describe("handleInput — single-select confirm", () => {
       resolved = r;
     });
     c.handleInput(INPUT.enter);
-    expect(resolved?.cancelled).toBe(false);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
   });
 
   it("result answers keyed by full question text, not header", () => {
@@ -322,8 +309,8 @@ describe("handleInput — single-select confirm", () => {
       resolved = r;
     });
     c.handleInput(INPUT.enter);
-    expect(resolved?.questions).toHaveLength(1);
-    expect(resolved?.questions[0].header).toBe("Database");
+    expect((resolved as unknown as Result).questions).toHaveLength(1);
+    expect((resolved as unknown as Result).questions[0].header).toBe("Database");
   });
 
   it("Space does not confirm in single-select mode", () => {
@@ -373,38 +360,28 @@ describe("handleInput — cancellation", () => {
 
 describe("handleInput — multi-select", () => {
   it("Space selects first option — shows [✓]", () => {
-    const c = make([multiSelectQ]);
+    const c = make([multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.space);
     const lines = c.render(80);
-    expect(lines.some((l) => l.includes("[✓]") && l.includes("Auth"))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes("[✓]") && l.includes("Auth"))).toBe(true);
   });
 
   it("Space again deselects — shows [ ]", () => {
-    const c = make([multiSelectQ]);
+    const c = make([multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.space);
     c.handleInput(INPUT.space);
     const lines = c.render(80);
-    expect(
-      lines.some(
-        (l) => (l.includes("[ ]") || l.includes("□")) && l.includes("Auth"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => (l.includes("[ ]") || l.includes("□")) && l.includes("Auth"))).toBe(true);
   });
 
   it("can select multiple options", () => {
-    const c = make([multiSelectQ]);
+    const c = make([multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.space); // select Auth
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.space); // select Search
     const lines = c.render(80);
-    expect(lines.some((l) => l.includes("[✓]") && l.includes("Auth"))).toBe(
-      true,
-    );
-    expect(lines.some((l) => l.includes("[✓]") && l.includes("Search"))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes("[✓]") && l.includes("Auth"))).toBe(true);
+    expect(lines.some((l) => l.includes("[✓]") && l.includes("Search"))).toBe(true);
   });
 
   it("toggling does not call done", () => {
@@ -436,9 +413,7 @@ describe("handleInput — multi-select", () => {
     c.handleInput(INPUT.space); // select Auth
     c.handleInput(INPUT.enter); // confirm
     expect(resolved).not.toBeNull();
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "Auth",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("Auth");
   });
 
   it("Enter after selecting options 1 and 3 resolves with joined labels sorted by index", () => {
@@ -451,9 +426,7 @@ describe("handleInput — multi-select", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.space); // select Export (index 2)
     c.handleInput(INPUT.enter); // confirm
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "Auth, Export",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("Auth, Export");
   });
 
   it("result has cancelled: false", () => {
@@ -463,7 +436,7 @@ describe("handleInput — multi-select", () => {
     });
     c.handleInput(INPUT.space);
     c.handleInput(INPUT.enter);
-    expect(resolved?.cancelled).toBe(false);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
   });
 
   it("result answers keyed by full question text", () => {
@@ -474,36 +447,34 @@ describe("handleInput — multi-select", () => {
     c.handleInput(INPUT.space);
     c.handleInput(INPUT.enter);
     // biome-ignore lint/style/noNonNullAssertion: we assert not.toBeNull() above
-    expect("Which features should we implement?" in resolved!.answers).toBe(
-      true,
-    );
+    expect("Which features should we implement?" in resolved!.answers).toBe(true);
   });
 });
 
 // ── handleInput — free-text mode ──────────────────────────────────────────────
 
 describe("handleInput — free-text mode", () => {
-  it("Space on 'Type your own answer...' enters edit mode — render shows ✎", () => {
-    const c = make([singleSelect]);
+  it("Tab on 'Type your own answer...' enters edit mode — render shows ✎", () => {
+    const c = make([singleSelect], NOOP_DONE);
     // Navigate to last option
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space);
+    c.handleInput(INPUT.tab);
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("✎"))).toBe(true);
   });
 
-  it("Space on 'Type your own answer...' also enters edit mode", () => {
-    const c = make([singleSelect]);
+  it("Tab on 'Type your own answer...' also enters edit mode", () => {
+    const c = make([singleSelect], NOOP_DONE);
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space);
+    c.handleInput(INPUT.tab);
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("✎"))).toBe(true);
   });
 
   it("Esc in edit mode exits without confirming — ✎ gone", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     c.handleInput(INPUT.escape); // exit
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("✎"))).toBe(false);
@@ -515,22 +486,22 @@ describe("handleInput — free-text mode", () => {
       called = true;
     });
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     c.handleInput(INPUT.escape);
     expect(called).toBe(false);
   });
 
   it("Enter with empty text clears previously saved free-text", () => {
-    const c = make([singleSelect, twoOptionsQ]);
+    const c = make([singleSelect, twoOptionsQ], () => {});
     // Type free-text on Q1
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "hello") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save "hello", back to options (single-select: auto-confirms + advances)
     // Navigate back, re-open editor, clear text
     c.handleInput(INPUT.left);
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // re-open editor (pre-filled with "hello")
+    c.handleInput(INPUT.tab); // re-open editor (pre-filled with "hello")
     // Clear editor by deleting — simulate backspace 5 times
     for (let i = 0; i < 5; i++) c.handleInput("\x7f"); // backspace
     c.handleInput(INPUT.enter); // Enter with empty → clears freeTextValue
@@ -539,13 +510,45 @@ describe("handleInput — free-text mode", () => {
     expect(lines.some((l) => l.includes("hello"))).toBe(false);
   });
 
+  it("single-select: clearing previously confirmed free-text un-confirms the question", () => {
+    // Regression: clearing free-text in single-select used to leave confirmed=true
+    // with no answer, so Submit would proceed with a missing answer.
+    let resolved: Result | null = null;
+    const c = make([singleSelect, twoOptionsQ], (r) => {
+      resolved = r;
+    });
+    // Q1: open editor on "Type your own answer...", type, save (auto-confirm + advance)
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.space);
+    for (const ch of "hello") c.handleInput(ch);
+    c.handleInput(INPUT.enter); // saves "hello", auto-advances to Q2
+
+    // Answer Q2 so Submit would otherwise be reachable.
+    c.handleInput(INPUT.enter); // single-select Enter on first option
+
+    // Go back to Q1, re-open editor, clear, save empty.
+    c.handleInput(INPUT.left);
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.space);
+    for (let i = 0; i < 5; i++) c.handleInput("\x7f"); // backspace x5
+    c.handleInput(INPUT.enter); // empty -> clear & un-confirm
+
+    // Move to Submit tab and try to submit.
+    c.handleInput(INPUT.right);
+    c.handleInput(INPUT.right);
+    c.handleInput(INPUT.enter);
+
+    // Submission must be blocked because Q1 is no longer confirmed.
+    expect(resolved).toBeNull();
+  });
+
   it("Enter with empty text in edit mode exits without confirming", () => {
     let called = false;
     const c = make([singleSelect], () => {
       called = true;
     });
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     c.handleInput(INPUT.enter); // enter with empty text
     expect(called).toBe(false);
     // Should be back in option mode
@@ -559,12 +562,108 @@ describe("handleInput — free-text mode", () => {
       resolved = r;
     });
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "hello") c.handleInput(ch);
     c.handleInput(INPUT.enter); // confirm
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
-    expect(resolved?.answers["Which database should we use?"]).toBe("hello");
+    expect((resolved as unknown as Result).cancelled).toBe(false);
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("hello");
+  });
+
+  it("Ctrl+Enter in edit mode inserts a newline (multiline)", () => {
+    const c = make([singleSelect], NOOP_DONE);
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("first");
+    c.handleInput(INPUT.ctrlEnter); // Ctrl+Enter — new line
+    c.handleInput("second");
+    // Still in edit mode (not submitted)
+    const lines = c.render(80);
+    expect(lines.some((l) => l.includes("✎"))).toBe(true);
+    // Editor should have multiline text
+    const text = (c as unknown as { editor: { getText: () => string } }).editor.getText();
+    expect(text).toContain("\n");
+    expect(text).toContain("first");
+    expect(text).toContain("second");
+  });
+
+  it("Ctrl+Enter then Enter submits multiline text", () => {
+    let resolved: Result | null = null;
+    const c = make([singleSelect], (r) => {
+      resolved = r;
+    });
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("line1");
+    c.handleInput(INPUT.ctrlEnter); // Ctrl+Enter — new line
+    c.handleInput("line2");
+    c.handleInput(INPUT.enter); // Enter submits
+    expect(resolved).not.toBeNull();
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("line1\nline2");
+  });
+
+  it("Shift+Enter in edit mode inserts a newline (multiline)", () => {
+    const c = make([singleSelect], NOOP_DONE);
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("first");
+    c.handleInput(INPUT.shiftEnter); // Shift+Enter — new line
+    c.handleInput("second");
+    // Still in edit mode (not submitted)
+    const lines = c.render(80);
+    expect(lines.some((l) => l.includes("✎"))).toBe(true);
+    // Editor should have multiline text
+    const text = (c as unknown as { editor: { getText: () => string } }).editor.getText();
+    expect(text).toContain("\n");
+    expect(text).toContain("first");
+    expect(text).toContain("second");
+  });
+
+  it("Shift+Enter then Enter submits multiline text", () => {
+    let resolved: Result | null = null;
+    const c = make([singleSelect], (r) => {
+      resolved = r;
+    });
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("line1");
+    c.handleInput(INPUT.shiftEnter); // Shift+Enter — new line
+    c.handleInput("line2");
+    c.handleInput(INPUT.enter); // Enter submits
+    expect(resolved).not.toBeNull();
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("line1\nline2");
+  });
+
+  it("Cmd+Enter in edit mode inserts a newline (multiline)", () => {
+    const c = make([singleSelect], NOOP_DONE);
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("first");
+    c.handleInput(INPUT.cmdEnter); // Cmd+Enter — new line
+    c.handleInput("second");
+    // Still in edit mode (not submitted)
+    const lines = c.render(80);
+    expect(lines.some((l) => l.includes("✎"))).toBe(true);
+    // Editor should have multiline text
+    const text = (c as unknown as { editor: { getText: () => string } }).editor.getText();
+    expect(text).toContain("\n");
+    expect(text).toContain("first");
+    expect(text).toContain("second");
+  });
+
+  it("Cmd+Enter then Enter submits multiline text", () => {
+    let resolved: Result | null = null;
+    const c = make([singleSelect], (r) => {
+      resolved = r;
+    });
+    for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
+    c.handleInput(INPUT.tab); // open editor
+    c.handleInput("line1");
+    c.handleInput(INPUT.cmdEnter); // Cmd+Enter — new line
+    c.handleInput("line2");
+    c.handleInput(INPUT.enter); // Enter submits
+    expect(resolved).not.toBeNull();
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("line1\nline2");
   });
 });
 
@@ -572,27 +671,22 @@ describe("handleInput — free-text mode", () => {
 
 describe("handleInput — multi-question tab navigation", () => {
   it("Tab advances from Q1 to Q2", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.right);
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("Which features"))).toBe(true);
   });
 
   it("Tab from Q2 reaches Submit tab", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.right); // Q2
     c.handleInput(INPUT.right); // Submit
     const lines = c.render(80);
-    expect(
-      lines.some(
-        (l) =>
-          l.includes("Press Enter to submit") || l.includes("Still needed"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("Press Enter to submit") || l.includes("Still needed"))).toBe(true);
   });
 
   it("Shift+Tab retreats from Q2 to Q1", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.right); // go to Q2
     c.handleInput(INPUT.left); // back to Q1
     const lines = c.render(80);
@@ -600,19 +694,14 @@ describe("handleInput — multi-question tab navigation", () => {
   });
 
   it("Shift+Tab on Q1 wraps to Submit tab", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.left);
     const lines = c.render(80);
-    expect(
-      lines.some(
-        (l) =>
-          l.includes("Press Enter to submit") || l.includes("Still needed"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("Press Enter to submit") || l.includes("Still needed"))).toBe(true);
   });
 
   it("Tab on Submit tab wraps to Q1", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.left); // go to Submit
     c.handleInput(INPUT.right); // wrap back to Q1
     const lines = c.render(80);
@@ -620,14 +709,14 @@ describe("handleInput — multi-question tab navigation", () => {
   });
 
   it("confirmed tab shows ■ indicator", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.enter); // confirm Q1, auto-advance to Q2
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("■"))).toBe(true);
   });
 
   it("unconfirmed tab has no ■ indicator", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     const lines = c.render(80);
     // Tab bar exists (Submit visible) but no ■ yet
     expect(lines.some((l) => l.includes("Submit"))).toBe(true);
@@ -671,7 +760,7 @@ describe("handleInput — Submit tab", () => {
     // Submit
     c.handleInput(INPUT.enter);
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
   });
 });
 
@@ -699,12 +788,10 @@ describe("full round-trip", () => {
     c.handleInput(INPUT.enter);
 
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
-    expect(resolved?.answers["Which database should we use?"]).toBe("SQLite");
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "Auth, Export",
-    );
-    expect(resolved?.questions).toHaveLength(2);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("SQLite");
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("Auth, Export");
+    expect((resolved as unknown as Result).questions).toHaveLength(2);
   });
 
   it("four questions — all answered", () => {
@@ -727,9 +814,9 @@ describe("full round-trip", () => {
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // Submit
 
-    expect(resolved?.questions).toHaveLength(4);
-    expect(Object.keys(resolved?.answers)).toHaveLength(4);
-    expect(resolved?.cancelled).toBe(false);
+    expect((resolved as unknown as Result).questions).toHaveLength(4);
+    expect(Object.keys((resolved as unknown as Result).answers)).toHaveLength(4);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
   });
 
   it("single question confirms immediately without Submit tab", () => {
@@ -743,17 +830,12 @@ describe("full round-trip", () => {
   });
 
   it("auto-advance: Q1 of 2 → Q2 (not Submit)", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     c.handleInput(INPUT.enter); // confirm Q1
     // Should now be on Q2 (Features), not Submit
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("Which features"))).toBe(true);
-    expect(
-      lines.some(
-        (l) =>
-          l.includes("Press Enter to submit") || l.includes("Still needed"),
-      ),
-    ).toBe(false);
+    expect(lines.some((l) => l.includes("Press Enter to submit") || l.includes("Still needed"))).toBe(false);
   });
 });
 
@@ -769,15 +851,13 @@ describe("multi-select + free-text combined", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor (Tab in multiSelect)
     for (const ch of "mytext") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text, return to options (cursor still on Type your own answer...)
     // Move cursor to a real option, then confirm
     c.handleInput(INPUT.up); // cursor on Export (index 2)
     c.handleInput(INPUT.enter); // confirm (Auth selected + free-text saved)
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "Auth, mytext",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("Auth, mytext");
   });
 
   it("Enter on Type your own answer... with saved free-text confirms immediately", () => {
@@ -786,15 +866,13 @@ describe("multi-select + free-text combined", () => {
       resolved = r;
     });
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor (Tab in multiSelect)
     for (const ch of "hello") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text, back to options
     // cursor still on Type your own answer... — Enter should confirm now
     c.handleInput(INPUT.enter);
     expect(resolved).not.toBeNull();
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "hello",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("hello");
   });
 
   it("Enter confirms when only free-text typed and no boxes checked", () => {
@@ -803,25 +881,23 @@ describe("multi-select + free-text combined", () => {
       resolved = r;
     });
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor (Tab in multiSelect)
     for (const ch of "onlytext") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text, return to options
     // Move cursor off "Type your own answer..." to a regular option, then confirm
     c.handleInput(INPUT.up);
     c.handleInput(INPUT.enter); // confirm (freeTextValue set, no checkboxes)
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "onlytext",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("onlytext");
   });
 
   it("Submit tab renders combined answer text", () => {
-    const c = make([multiSelectQ, twoOptionsQ]);
+    const c = make([multiSelectQ, twoOptionsQ], () => {});
     // Answer Q1: check Auth + type free-text
     c.handleInput(INPUT.space); // select Auth
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor (Tab in multiSelect)
     for (const ch of "extra") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text, return to options (cursor on Type your own answer...)
     c.handleInput(INPUT.up); // move cursor to a real option
@@ -830,9 +906,7 @@ describe("multi-select + free-text combined", () => {
     c.handleInput(INPUT.enter); // confirm Q2, advance to Submit
     // Now on Submit tab — render and check answer text
     const lines = c.render(80);
-    expect(lines.some((l) => l.includes("Auth") && l.includes("extra"))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes("Auth") && l.includes("extra"))).toBe(true);
   });
 });
 
@@ -851,9 +925,7 @@ describe("auto-confirm on → navigation", () => {
     // Now on Submit tab — submit
     c.handleInput(INPUT.enter);
     expect(resolved).not.toBeNull();
-    expect(resolved?.answers["Which features should we implement?"]).toBe(
-      "Auth",
-    );
+    expect((resolved as unknown as Result).answers["Which features should we implement?"]).toBe("Auth");
   });
 
   it("multi-select: navigating → with nothing selected does NOT auto-confirm", () => {
@@ -907,7 +979,7 @@ describe("multi-select: un-confirm when all answers removed", () => {
     });
     // Confirm Q1 with free-text only
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor (Tab in multiSelect)
     for (const ch of "hello") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save
     c.handleInput(INPUT.up);
@@ -915,7 +987,7 @@ describe("multi-select: un-confirm when all answers removed", () => {
     c.handleInput(INPUT.left); // back to Q1
     // Clear free-text
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // re-open editor (pre-filled)
+    c.handleInput(INPUT.tab); // re-open editor (Tab in multiSelect)
     for (let i = 0; i < 10; i++) c.handleInput("\x7f"); // backspace to clear
     c.handleInput(INPUT.enter); // Enter empty — clears freeTextValue, un-confirms
     c.handleInput(INPUT.right); // to Submit
@@ -934,7 +1006,7 @@ describe("single-select: free-text then pick regular option", () => {
     });
     // Type free-text first
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "mytext") c.handleInput(ch);
     c.handleInput(INPUT.enter); // confirm free-text — resolves for single question
     // For this test we need a two-question setup so we can navigate back
@@ -949,7 +1021,7 @@ describe("single-select: free-text then pick regular option", () => {
       options: [{ label: "X" }, { label: "Y" }],
       multiSelect: false,
     };
-    const c = make([singleSelect, twoOptionsQ, q3]);
+    const c = make([singleSelect, twoOptionsQ, q3], () => {});
     // Confirm Q1 with PostgreSQL (Enter → selectedIndex=0, advance to Q2)
     c.handleInput(INPUT.enter);
     // Navigate back to Q1
@@ -957,12 +1029,10 @@ describe("single-select: free-text then pick regular option", () => {
     // Now on Q1: cursor on first option, selectedIndex=0 (✓ on PostgreSQL)
     // Verify ✓ is on PostgreSQL before typing free-text
     let lines = c.render(80);
-    expect(lines.some((l) => l.includes("✓") && l.includes("PostgreSQL"))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes("✓") && l.includes("PostgreSQL"))).toBe(true);
     // Type free-text
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "mytext") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text — clears selectedIndex, auto-advances to Q2
     // Navigate back to Q1 to verify ✓ is gone from PostgreSQL
@@ -972,9 +1042,7 @@ describe("single-select: free-text then pick regular option", () => {
     expect(pgLines.length).toBeGreaterThan(0);
     for (const l of pgLines) expect(l).not.toMatch(/✓/);
     // ✓ should be on the "Type your own answer..." row, preview text on the line below
-    expect(
-      lines.some((l) => l.includes("✓") && l.includes("Type your own answer")),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("✓") && l.includes("Type your own answer"))).toBe(true);
     expect(lines.some((l) => l.includes("mytext"))).toBe(true);
   });
 
@@ -986,7 +1054,7 @@ describe("single-select: free-text then pick regular option", () => {
     });
     // Type free-text on Q1
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down); // cursor on Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "mytext") c.handleInput(ch);
     c.handleInput(INPUT.enter); // confirm free-text, advance to Q2
     // Navigate back to Q1
@@ -997,9 +1065,7 @@ describe("single-select: free-text then pick regular option", () => {
     // Advance to Q2 and submit
     c.handleInput(INPUT.enter); // confirm Q2
     c.handleInput(INPUT.enter); // submit
-    expect(resolved?.answers["Which database should we use?"]).toBe(
-      "PostgreSQL",
-    );
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("PostgreSQL");
   });
 });
 
@@ -1007,21 +1073,21 @@ describe("single-select: free-text then pick regular option", () => {
 
 describe("edge cases", () => {
   it("narrow terminal — no line exceeds width", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     for (const line of c.render(30)) {
       expect(stripAnsi(line).length).toBeLessThanOrEqual(30);
     }
   });
 
   it("very narrow terminal — no line exceeds width", () => {
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     for (const line of c.render(20)) {
       expect(stripAnsi(line).length).toBeLessThanOrEqual(20);
     }
   });
 
   it("cursor restored when navigating back to answered single-select question", () => {
-    const c = make([singleSelect, multiSelectQ]);
+    const c = make([singleSelect, multiSelectQ], NOOP_DONE);
     // Move cursor to option 3 (DuckDB), confirm
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
@@ -1040,7 +1106,7 @@ describe("edge cases", () => {
       options: [{ label: "A" }, { label: "B" }, { label: "C" }],
       multiSelect: true,
     };
-    const c = make([msQ1, twoOptionsQ]);
+    const c = make([msQ1, twoOptionsQ], () => {});
     // Select A and C on Q1
     c.handleInput(INPUT.space); // select A (index 0)
     c.handleInput(INPUT.down);
@@ -1052,11 +1118,7 @@ describe("edge cases", () => {
     const lines = c.render(80);
     expect(lines.some((l) => l.includes("[✓]") && l.includes("A"))).toBe(true);
     expect(lines.some((l) => l.includes("[✓]") && l.includes("C"))).toBe(true);
-    expect(
-      lines.some(
-        (l) => (l.includes("[ ]") || l.includes("□")) && l.includes("B"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => (l.includes("[ ]") || l.includes("□")) && l.includes("B"))).toBe(true);
   });
 
   it("free-text Esc then selecting option uses option label, not typed text", () => {
@@ -1066,15 +1128,13 @@ describe("edge cases", () => {
     });
     // Go to "Type your own answer...", enter edit mode, type, then Esc
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "hello") c.handleInput(ch);
     c.handleInput(INPUT.escape); // exit WITHOUT saving
     // Navigate back to option 1, confirm
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.up);
     c.handleInput(INPUT.enter);
-    expect(resolved?.answers["Which database should we use?"]).toBe(
-      "PostgreSQL",
-    );
+    expect((resolved as unknown as Result).answers["Which database should we use?"]).toBe("PostgreSQL");
   });
 
   it("done called exactly once on multi-select confirm", () => {
@@ -1150,8 +1210,8 @@ describe("fuzz — tab view", () => {
     answerAll(c);
     c.handleInput(INPUT.enter); // submit
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
-    expect(Object.keys(resolved?.answers)).toHaveLength(4);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
+    expect(Object.keys((resolved as unknown as Result).answers)).toHaveLength(4);
   });
 
   it("fuzz-02: skip Q1, answer Q2–Q4, Submit blocks, go back, answer Q1, submit works", () => {
@@ -1176,7 +1236,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.right); // Submit
     c.handleInput(INPUT.enter); // submit
     expect(resolved).not.toBeNull();
-    expect(resolved?.cancelled).toBe(false);
+    expect((resolved as unknown as Result).cancelled).toBe(false);
   });
 
   it("fuzz-03: answer Q1, change mind by navigating back and re-answering", () => {
@@ -1194,7 +1254,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.enter); // Q3
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // submit
-    expect(resolved?.answers["Which runtime?"]).toBe("Deno");
+    expect((resolved as unknown as Result).answers["Which runtime?"]).toBe("Deno");
   });
 
   it("fuzz-04: cancel from Q3 mid-flow — done(null)", () => {
@@ -1220,7 +1280,7 @@ describe("fuzz — tab view", () => {
   });
 
   it("fuzz-06: → wraps from Submit back to Q1", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     answerAll(c); // lands on Submit
     c.handleInput(INPUT.right); // wraps to Q1
     const lines = c.render(80);
@@ -1228,14 +1288,10 @@ describe("fuzz — tab view", () => {
   });
 
   it("fuzz-07: ← from Q1 wraps to Submit tab", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     c.handleInput(INPUT.left); // Q1 → Submit
     const lines = c.render(80);
-    expect(
-      lines.some(
-        (l) => l.includes("Still needed") || l.includes("Press Enter"),
-      ),
-    ).toBe(true);
+    expect(lines.some((l) => l.includes("Still needed") || l.includes("Press Enter"))).toBe(true);
   });
 
   it("fuzz-08: multi-select — toggle all options on then off, confirm blocked", () => {
@@ -1273,7 +1329,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down); // Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "MongoDB") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save free-text
     c.handleInput(INPUT.up); // move cursor off Type your own answer...
@@ -1281,16 +1337,14 @@ describe("fuzz — tab view", () => {
     // Navigate back to Q2 and verify state preserved
     c.handleInput(INPUT.left); // back to Q2
     const lines = c.render(80);
-    expect(lines.some((l) => l.includes("[✓]") && l.includes("Postgres"))).toBe(
-      true,
-    );
+    expect(lines.some((l) => l.includes("[✓]") && l.includes("Postgres"))).toBe(true);
     expect(lines.some((l) => l.includes("MongoDB"))).toBe(true);
     // Complete and check result
     c.handleInput(INPUT.right); // Q3
     c.handleInput(INPUT.enter); // Q3: AWS → Q4
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // submit
-    expect(resolved?.answers["Which databases?"]).toBe("Postgres, MongoDB");
+    expect((resolved as unknown as Result).answers["Which databases?"]).toBe("Postgres, MongoDB");
   });
 
   it("fuzz-10: free-text on single-select, then change mind to option — free-text cleared", () => {
@@ -1302,7 +1356,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down); // Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "Rust") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save + auto-confirm → Q2
     c.handleInput(INPUT.left); // back to Q1 — cursor still on Type your own answer... (index 3)
@@ -1315,18 +1369,18 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.enter); // Q3
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // submit
-    expect(resolved?.answers["Which runtime?"]).toBe("Bun");
+    expect((resolved as unknown as Result).answers["Which runtime?"]).toBe("Bun");
   });
 
   it("fuzz-11: rapid → navigation across all tabs without answering — render never crashes", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     for (let i = 0; i < 20; i++) c.handleInput(INPUT.right);
     expect(() => c.render(80)).not.toThrow();
     expect(() => c.render(40)).not.toThrow();
   });
 
   it("fuzz-12: rapid ← navigation across all tabs — render never crashes", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     for (let i = 0; i < 20; i++) c.handleInput(INPUT.left);
     expect(() => c.render(80)).not.toThrow();
   });
@@ -1345,7 +1399,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.enter); // Q3 → Q4
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // submit
-    expect(resolved?.answers["Which databases?"]).toBe("Redis");
+    expect((resolved as unknown as Result).answers["Which databases?"]).toBe("Redis");
   });
 
   it("fuzz-14: answer all, navigate back to Q2, clear all checkboxes — Submit blocks", () => {
@@ -1375,7 +1429,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down); // Type your own answer...
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "nope") c.handleInput(ch);
     c.handleInput(INPUT.escape); // discard — freeTextValue unchanged (was null)
     // Select a checkbox instead
@@ -1430,14 +1484,14 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.enter); // Q4 → Submit
     c.handleInput(INPUT.enter); // submit
     expect(resolved).not.toBeNull();
-    expect(resolved?.answers["Which runtime?"]).toBe("Node");
-    expect(resolved?.answers["Which databases?"]).toBe("Postgres");
-    expect(resolved?.answers["Which cloud?"]).toBe("AWS");
-    expect(resolved?.answers["Which CI?"]).toBe("GitHub Actions");
+    expect((resolved as unknown as Result).answers["Which runtime?"]).toBe("Node");
+    expect((resolved as unknown as Result).answers["Which databases?"]).toBe("Postgres");
+    expect((resolved as unknown as Result).answers["Which cloud?"]).toBe("AWS");
+    expect((resolved as unknown as Result).answers["Which CI?"]).toBe("GitHub Actions");
   });
 
   it("fuzz-19: narrow terminal — render never crashes or overflows on all tabs", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     // Answer a couple questions first to get some state
     c.handleInput(INPUT.enter);
     c.handleInput(INPUT.space);
@@ -1454,12 +1508,12 @@ describe("fuzz — tab view", () => {
   });
 
   it("fuzz-20: free-text cleared on Q1, cursor restored to option on re-entry", () => {
-    const c = make(qs);
+    const c = make(qs, () => {});
     // Type free-text on Q1
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // open editor
+    c.handleInput(INPUT.tab); // open editor
     for (const ch of "Elixir") c.handleInput(ch);
     c.handleInput(INPUT.enter); // save + confirm → Q2
     c.handleInput(INPUT.left); // back to Q1
@@ -1467,7 +1521,7 @@ describe("fuzz — tab view", () => {
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
     c.handleInput(INPUT.down);
-    c.handleInput(INPUT.space); // re-open editor (pre-filled with "Elixir")
+    c.handleInput(INPUT.tab); // re-open editor (pre-filled with "Elixir")
     for (let i = 0; i < 6; i++) c.handleInput("\x7f"); // backspace all
     c.handleInput(INPUT.enter); // empty enter — clears freeTextValue + un-confirms
     // Verify no free-text preview shown
@@ -1495,13 +1549,13 @@ describe("coverage — schema.ts", () => {
     expect(QuestionSchema.properties.header).toBeDefined();
     expect(QuestionSchema.properties.options).toBeDefined();
     expect(QuestionSchema.properties.multiSelect).toBeDefined();
-    expect(QuestionSchema.properties.options.minItems).toBe(2);
-    expect(QuestionSchema.properties.options.maxItems).toBe(4);
+    expect((QuestionSchema.properties.options as { minItems?: number }).minItems).toBe(2);
+    expect((QuestionSchema.properties.options as { maxItems?: number }).maxItems).toBe(4);
   });
 
   it("InputSchema constrains questions to 1–4", () => {
-    expect(InputSchema.properties.questions.minItems).toBe(1);
-    expect(InputSchema.properties.questions.maxItems).toBe(4);
+    expect((InputSchema.properties.questions as { minItems?: number }).minItems).toBe(1);
+    expect((InputSchema.properties.questions as { maxItems?: number }).maxItems).toBe(4);
   });
 
   it("ResultSchema has questions, answers, cancelled", () => {
@@ -1514,12 +1568,7 @@ describe("coverage — schema.ts", () => {
 
 describe("coverage — component.ts gaps", () => {
   it("render returns [] for empty questions array", () => {
-    const c = new AskUserQuestionComponent(
-      [],
-      mockTui as TUILike,
-      mockTheme as unknown as Theme,
-      () => {},
-    );
+    const c = new AskUserQuestionComponent([], mockTui as TUILike, mockTheme as unknown as Theme, () => {});
     expect(c.render(80)).toEqual([]);
   });
 
@@ -1553,7 +1602,7 @@ describe("coverage — component.ts gaps", () => {
 
   it("editorTheme callbacks are exercised via editor render in edit mode", () => {
     // Exercises lines 86-90 (borderColor + selectList callbacks)
-    const c = make([singleSelect]);
+    const c = make([singleSelect], NOOP_DONE);
     for (let i = 0; i < 10; i++) c.handleInput(INPUT.down);
     c.handleInput(INPUT.space); // enter edit mode → editor.render called in renderQuestionBody
     expect(() => c.render(80)).not.toThrow();
