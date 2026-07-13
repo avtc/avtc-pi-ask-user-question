@@ -2,8 +2,6 @@
 
 A question tool for the agent — single/multi-select or free-text, with subagent forwarding and attention alerts.
 
-Inspired by Claude Code's `AskUserQuestion` tool; originally derived from [ghoseb/pi-askuserquestion](https://github.com/ghoseb/pi-askuserquestion).
-
 ## Features
 
 - **Single & multi-select** — pick one option or check several; each option has a label and description
@@ -59,7 +57,16 @@ Help me scaffold a new web app. Ask me what you need to know first.
 | `←` `→` | Switch tabs |
 | `Esc` | Cancel (or discard free-text) |
 
-> Forked from [ghoseb/pi-askuserquestion](https://github.com/ghoseb/pi-askuserquestion) and extended with [Z.ai](https://z.ai/subscribe?ic=N5IV4LLOOV) — get 10% off your subscription via this referral link.
+## Full suite
+
+Check out the full suite of related extensions, [avtc-pi](https://github.com/avtc/avtc-pi) — deterministic feature development, subagent delegation, working-memory, behavioral learning, parallel-work guardrails, durable decisions, notifications, and more.
+
+Developed with [Z.ai](https://z.ai/subscribe?ic=N5IV4LLOOV) — get 10% off your subscription via this referral link.
+
+## Attribution
+
+Inspired by Claude Code's `AskUserQuestion` tool.
+Fork of [ghoseb/pi-askuserquestion](https://github.com/ghoseb/pi-askuserquestion).
 
 ## License
 

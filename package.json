@@ -1,6 +1,6 @@
 {
   "name": "avtc-pi-ask-user-question",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A question tool for the agent — single/multi-select or free-text, with subagent forwarding and attention alerts.",
   "type": "module",
   "scripts": {
@@ -16,15 +16,14 @@
     "test:watch": "vitest",
     "test:unit": "node scripts/test-low-priority.cjs vitest run",
     "test": "node scripts/test-low-priority.cjs \"node scripts/run-parallel.cjs \"npm run lint:optional-params :: npm run lint:bare-literals :: npm run lint:design-refs :: npm run lint:bundled-imports :: npm run lint:as-never :: npm run lint :: npm run typecheck :: npm run knip :: npm run dupes\" && vitest run\"",
-    "lint:as-never": "node scripts/no-as-never.cjs src/ tests/ index.ts",
-    "prepublishOnly": "node scripts/check-symlinks.mjs"
+    "lint:as-never": "node scripts/no-as-never.cjs src/ tests/ index.ts"
   },
   "main": "./index.ts",
   "types": "./index.ts",
   "pi": {
     "extensions": [
       "./index.ts",
-      "node_modules/avtc-pi-ui-components/index.ts"
+      "../avtc-pi-ui-components/index.ts"
     ],
     "allowedCodeDeps": []
   },
@@ -64,8 +63,5 @@
     "assets/",
     "LICENSE",
     "README.md"
-  ],
-  "bundledDependencies": [
-    "avtc-pi-ui-components"
   ]
 }
