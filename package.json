@@ -1,6 +1,6 @@
 {
   "name": "avtc-pi-ask-user-question",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A question tool for the agent — single/multi-select or free-text, with subagent forwarding and attention alerts.",
   "type": "module",
   "scripts": {
@@ -28,13 +28,13 @@
     "allowedCodeDeps": []
   },
   "dependencies": {
-    "avtc-pi-ui-components": "^1.0.3"
+    "avtc-pi-ui-components": "^1.0.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
-    "@earendil-works/pi-ai": "^0.80.6",
-    "@earendil-works/pi-coding-agent": "^0.80.6",
-    "@earendil-works/pi-tui": "^0.80.6",
+    "@earendil-works/pi-ai": "^0.84.1",
+    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@earendil-works/pi-tui": "^0.84.1",
     "@types/node": "^25.9.3",
     "@vitest/coverage-istanbul": "^4.1.9",
     "jscpd": "^5.0.10",
