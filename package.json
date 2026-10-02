@@ -1,6 +1,6 @@
 {
   "name": "avtc-pi-ask-user-question",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "A question tool for the agent — single/multi-select or free-text, with subagent forwarding and attention alerts.",
   "type": "module",
   "scripts": {
@@ -29,7 +29,7 @@
     "image": "https://raw.githubusercontent.com/avtc/avtc-pi-ask-user-question/main/assets/images/cover.png"
   },
   "dependencies": {
-    "avtc-pi-ui-components": "^1.0.4"
+    "avtc-pi-ui-components": "^1.0.7"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
